@@ -4,7 +4,7 @@ import { createSlice } from "@reduxjs/toolkit";
 const prodRoute = createSlice({
     name: "prod",
     initialState: {
-        link: "http://localhost:5000",
+        link: import.meta.env.VITE_API_URL || "http://localhost:8000",
     },
 
     

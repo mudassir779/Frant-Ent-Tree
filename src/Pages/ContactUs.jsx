@@ -1,9 +1,14 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import axios from 'axios';
 import { useSelector } from 'react-redux';
 
 const ContactUs = () => {
   const backendLink = useSelector((state) => state.prod.link);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [showSubmissionLabel, setShowSubmissionLabel] = useState(false);
+  const [submittedRequests, setSubmittedRequests] = useState([]);
   const [formData, setFormData] = useState({
     Contact_Details: {
       First_name: '',
@@ -43,6 +48,42 @@ const ContactUs = () => {
   })
 
   const fileInputRef = useRef(null);
+
+  // Load submitted requests from localStorage on component mount
+  useEffect(() => {
+    const loadSubmittedRequests = () => {
+      try {
+        const saved = localStorage.getItem('submittedRequests');
+        if (saved) {
+          const requests = JSON.parse(saved);
+          const now = new Date().getTime();
+          
+          // Filter out requests older than 2 days (48 hours = 48 * 60 * 60 * 1000 ms)
+          const validRequests = requests.filter(request => {
+            const requestTime = new Date(request.timestamp).getTime();
+            const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
+            return (now - requestTime) < twoDaysInMs;
+          });
+          
+          // Update localStorage with filtered requests
+          if (validRequests.length !== requests.length) {
+            localStorage.setItem('submittedRequests', JSON.stringify(validRequests));
+          }
+          
+          setSubmittedRequests(validRequests);
+        }
+      } catch (error) {
+        console.error('Error loading submitted requests:', error);
+      }
+    };
+
+    loadSubmittedRequests();
+    
+    // Check every hour for expired requests
+    const interval = setInterval(loadSubmittedRequests, 60 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -102,6 +143,63 @@ const ContactUs = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError("");
+    setShowSubmissionLabel(true);
+
+    // Validate required fields
+    if (!formData.Contact_Details.First_name.trim()) {
+      setError("First name is required.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
+
+    if (!formData.Contact_Details.Last_name.trim()) {
+      setError("Last name is required.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
+
+    if (!formData.Contact_Details.Email.trim()) {
+      setError("Email is required.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.Contact_Details.Email)) {
+      setError("Please enter a valid email address.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
+
+    if (!formData.Contact_Details.Phone.trim()) {
+      setError("Phone number is required.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
+
+    // Phone validation (basic)
+    const phoneRegex = /^[\d\s\-\+\(\)]+$/;
+    if (!phoneRegex.test(formData.Contact_Details.Phone) || formData.Contact_Details.Phone.replace(/\D/g, '').length < 10) {
+      setError("Please enter a valid phone number.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
+
+    if (!formData.Service_details.PropertyType) {
+      setError("Property type is required.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
+      return;
+    }
 
     const services = formData.Service_details;
     const atLeastOneService = services.Tree_Removal ||
@@ -112,7 +210,9 @@ const ContactUs = () => {
       services.Tree_Maintenance_Planning;
 
     if (!atLeastOneService) {
-      alert("Please select at least one service.");
+      setError("Please select at least one service type.");
+      setSubmitting(false);
+      setShowSubmissionLabel(false);
       return;
     }
     try {
@@ -171,11 +271,47 @@ const ContactUs = () => {
           },
           Images: []
         });
-        alert('Form submitted successfully');
+        setSuccess(true);
+        setShowSubmissionLabel(false); // Hide submission label immediately on success
+        
+        // Save submitted request to localStorage
+        const newRequest = {
+          id: Date.now(),
+          name: `${formData.Contact_Details.First_name} ${formData.Contact_Details.Last_name}`,
+          service: Object.keys(formData.Service_details).filter(key => 
+            formData.Service_details[key] === true && key !== 'PropertyType' && key !== 'Job_Size' && key !== 'Job_Details'
+          ).join(', '),
+          timestamp: new Date().toISOString()
+        };
+        
+        const existingRequests = JSON.parse(localStorage.getItem('submittedRequests') || '[]');
+        const updatedRequests = [...existingRequests, newRequest];
+        localStorage.setItem('submittedRequests', JSON.stringify(updatedRequests));
+        setSubmittedRequests(updatedRequests);
+        
+        setTimeout(() => setSuccess(false), 5000); // Hide success message after 5 seconds
       }
 
     } catch (error) {
-      alert("Failed to Submit form", error.message);
+      console.error("Error submitting form:", error);
+      console.error("Error response:", error.response);
+      
+      // Provide more specific error messages
+      if (error.response?.status === 400) {
+        setError(error.response?.data?.message || "Please check your input and try again");
+      } else if (error.response?.status === 500) {
+        setError("Server error. Please try again later.");
+      } else if (error.code === 'NETWORK_ERROR' || !error.response) {
+        setError("Unable to connect to server. Please check your internet connection.");
+      } else {
+        setError(error.response?.data?.message || "Failed to submit request. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+      // Hide submission label after 2 seconds
+      setTimeout(() => {
+        setShowSubmissionLabel(false);
+      }, 2000);
     }
   };
 
@@ -248,6 +384,40 @@ const ContactUs = () => {
                 ))}
               </ul>
             </div>
+
+            {/* Recent Requests Section */}
+            {submittedRequests.length > 0 && (
+              <div className="mt-8">
+                <h2 className="text-xl font-semibold text-gray-800 mb-3">Recent Service Requests</h2>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="space-y-3">
+                    {submittedRequests.map((request, index) => (
+                      <div key={request.id} className="bg-white rounded-md p-3 shadow-sm border border-green-100">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-green-800">{request.name}</p>
+                            <p className="text-sm text-gray-600 capitalize">
+                              {request.service.replace(/_/g, ' ').toLowerCase()}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-gray-500">
+                              {new Date(request.timestamp).toLocaleDateString()}
+                            </p>
+                            <p className="text-xs text-green-600 font-medium">
+                              Request Submitted
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                    Recent requests will be shown for 2 days
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Form */}
@@ -256,6 +426,28 @@ const ContactUs = () => {
             <p className="text-gray-600 mb-6 text-sm sm:text-base">
               Fill out the form below and we'll get back to you as soon as possible.
             </p>
+
+            {/* Submission Label at the top */}
+            {showSubmissionLabel && (
+              <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-4 flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700 mr-2"></div>
+                Submitting your request...
+              </div>
+            )}
+            
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                {error}
+              </div>
+            )}
+            
+            {/* Success Message */}
+            {success && (
+              <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                Thank you! Your request has been submitted successfully. We will get back to you soon.
+              </div>
+            )}
 
             <form className="space-y-6 text-sm sm:text-base" onSubmit={handleSubmit}>
               {/* Contact Details */}
@@ -509,9 +701,10 @@ const ContactUs = () => {
               <div className="flex justify-self-end">
                 <button
                   type="submit"
-                  className="w-full sm:w-auto bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-6 rounded-md transition duration-300 ease-in-out transform hover:scale-105"
+                  disabled={submitting}
+                  className={`w-full sm:w-auto bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-6 rounded-md transition duration-300 ease-in-out transform hover:scale-105 ${submitting ? "opacity-70 cursor-not-allowed" : ""}`}
                 >
-                  Submit Request
+                  {submitting ? "Submitting..." : "Submit Request"}
                 </button>
               </div>
             </form>

@@ -12,6 +12,8 @@ const AddTestimonialForm = ({ onTestimonialSubmit }) => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [showSubmissionLabel, setShowSubmissionLabel] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -50,36 +52,72 @@ const AddTestimonialForm = ({ onTestimonialSubmit }) => {
     e.preventDefault();
     setSubmitting(true);
     setError("");
+    setShowSubmissionLabel(true);
 
     try {
-      // Create a FormData object and append fields
-      const data = new FormData();
-      data.append("name", formData.name);
-      data.append("rating", formData.rating);
-      data.append("content", formData.content);
-
+      console.log("Backend URL:", backendLink);
+      console.log("Full URL:", `${backendLink}/api/testimonials/create-testimonials`);
+      console.log("Form data:", formData);
+      
+      // Try with JSON first (simpler approach)
       const response = await axios.post(
         `${backendLink}/api/testimonials/create-testimonials`,
-        data,
+        {
+          name: formData.name,
+          rating: formData.rating,
+          content: formData.content
+        },
         {
           headers: {
-            "Content-Type": "multipart/form-data"
+            "Content-Type": "application/json"
           }
         }
       );
+      console.log("Response:", response.data);
       onTestimonialSubmit(response.data); // Update parent component
       setFormData({ name: "", rating: 5, content: "" }); // Reset form
+      setSuccess(true);
+      setShowSubmissionLabel(false); // Hide submission label immediately on success
+      setTimeout(() => setSuccess(false), 3000); // Hide success message after 3 seconds
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to submit testimonial");
+      console.error("Error submitting testimonial:", err);
+      console.error("Error response:", err.response);
+      console.error("Error status:", err.response?.status);
+      console.error("Error data:", err.response?.data);
+      
+      // Provide more specific error messages
+      if (err.response?.status === 400) {
+        setError(err.response?.data?.message || "Please check your input and try again");
+      } else if (err.response?.status === 500) {
+        setError("Server error. Please try again later.");
+      } else if (err.code === 'NETWORK_ERROR' || !err.response) {
+        setError("Unable to connect to server. Please check your internet connection.");
+      } else {
+        setError(err.response?.data?.message || "Failed to submit testimonial");
+      }
     } finally {
       setSubmitting(false);
+      // Hide submission label after 2 seconds
+      setTimeout(() => {
+        setShowSubmissionLabel(false);
+      }, 2000);
     }
   };
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md max-w-2xl mx-auto">
       <h2 className="text-xl font-semibold mb-4">Share Your Experience</h2>
+      
+      {/* Submission Label at the top */}
+      {showSubmissionLabel && (
+        <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-4 flex items-center">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700 mr-2"></div>
+          Submitting your testimonial...
+        </div>
+      )}
+      
       {error && <p className="text-red-500 mb-4">{error}</p>}
+      {success && <p className="text-green-500 mb-4">Thank you! Your testimonial has been submitted successfully.</p>}
 
       <form onSubmit={handleSubmit}>
         {/* Name Field */}
