@@ -1,14 +1,11 @@
 import { createSlice } from "@reduxjs/toolkit";
 
-
 const prodRoute = createSlice({
     name: "prod",
     initialState: {
-        link: import.meta.env.VITE_API_URL || "http://localhost:8000",
+        // Live backend (Coolify)
+        link: "https://mudassir779-backend.coolify.app",
     },
+});
 
-    
-})
-
-export default prodRoute.reducer
-
+export default prodRoute.reducer;
